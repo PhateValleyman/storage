@@ -1,66 +1,100 @@
-# Storage Usage Monitor
+# Storage Monitor (Go)
 
-A lightweight Go utility that displays storage usage information with a visual progress bar and color-coded output for easy monitoring.
+A lightweight **Go** program that displays storage usage across multiple devices — including **Android**, **tablets**, and **ZyXEL NAS** systems — with automatic detection of **USB drives** connected to ZyXEL NAS (`/e-data`).
 
-## Features
+This project preserves the original code structure while extending it with dynamic USB detection on ZyXEL devices running **FFP (fonz_fun_plug)**.
 
-- 📊 Visual storage usage representation with progress bars
-- 🎨 Color-coded output for better readability
-- 📱 Supports multiple storage devices (internal, external, RAID arrays)
-- 🔢 Displays total, used, and free space in appropriate units
-- 🖥️ Clean, formatted output for terminal viewing
+---
 
-## Supported Storage Types
+## 📦 Features
 
-- Android internal storage
-- SD cards
-- RAID arrays (md devices)
-- Any mountable storage device
+- Displays formatted storage information for:
+  - **Redmi** internal and SD card paths
+  - **Android tablet** storage
+  - **ZyXEL NAS** RAID volumes (`/dev/md0`, `/dev/md1`)
+  - **Automatically detected USB drives** in `/e-data`
+- Uses `df` to gather disk stats (works on Linux and embedded NAS systems)
+- Shows color-coded bar charts with usage percentage
+- Designed to run on **low-resource environments** (ARMv5 ZyXEL NAS)
+- ANSI color support for clean, readable terminal output
 
-## Installation
+---
 
-1. Ensure you have Go installed on your system
-2. Clone or download this repository
-3. Build the executable:
-   ```bash
-   CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5 go build -trimpath -v -x -o ./bin/storage ./main.go
-```
+## 🧠 How It Works
 
-Usage
+1. A static list of known storage paths is defined (Android + ZyXEL HDDs).
+2. The function `detectZyXELUSB()` lists the `/e-data` directory to find all connected USB devices automatically.
+3. Each found mount is appended to the main storage list.
+4. For each storage path, `df` is executed to retrieve capacity and usage data.
+5. The information is displayed as a colored usage bar and numerical summary.
 
-Run the compiled binary:
+---
 
+## ⚙️ Requirements
+
+- **Go 1.19+**  
+- Works on:
+  - Linux (x86 / ARM / ARMv5 / ARMv7)
+  - Android (via Termux)
+  - ZyXEL NAS with FFP (fonz_fun_plug)
+
+Ensure that:
+- `/e-data` exists (for ZyXEL USB devices)
+- `df` and `ls` commands are available in your system PATH
+
+---
+
+## 🚀 Usage
+
+### Run directly:
 ```bash
+go run main.go
+
+Build binary:
+
+go build -o storage main.go
+
+Run the binary:
+
 ./storage
-```
 
-Output Example
 
-```
-=== Úložiště ===
-Interní úložiště
-  ##############################  85% used
-  Total: 64 G | Used: 54 G | Free: 10240 M
+---
 
-SD karta
-  ##################           60% used
-  Total: 128 G | Used: 77 G | Free: 51200 M
-```
+📁 Directory Detection Logic (ZyXEL USB)
 
-Customization
+The ZyXEL USB devices are mounted under /e-data/ with directories named after the device UUID or label.
+For example:
 
-To monitor different storage paths, edit the storages slice in the main() function:
+/e-data/af5af4bc-aed3-4497-9663-9e2c60bbd5cb
+/e-data/68E0-DADB
 
-```go
-storages := []Storage{
-    {"/path/to/your/storage", "Custom Label"},
-    {"/another/path", "Another Label"},
-}
-```
+The program dynamically lists these entries and adds them to the monitored storages list, labeling them as USB: <directory>.
 
-Requirements
 
-· Go 1.11 or higher
-· Linux/Unix-like system with df command available
-· Terminal that supports ANSI color codes
+---
+
+🧩 Future Enhancements
+
+Auto-detect USB labels via blkid
+
+Shorten UUID display (e.g., USB: af5af)
+
+Include network mounts (/mnt/nfs, /mnt/smb)
+
+JSON output mode for integration with dashboards
+
+
+
+---
+
+🧑‍💻 Author
+
+Jonáš Nedvědický (PhateValleyman)
+Maintained as part of embedded utilities for ARM-based systems.
+
+
+---
+
+
 

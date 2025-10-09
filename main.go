@@ -1,3 +1,7 @@
+// main.go
+// Enhanced version that automatically detects connected USB devices on ZyXEL
+// All original code preserved as much as possible.
+
 package main
 
 import (
@@ -20,11 +24,11 @@ type Storage struct {
 	Label string
 }
 
+// Function to display usage bar for given storage path
 func showStorage(path, label string) {
 	cmd := exec.Command("df", path)
 	out, err := cmd.Output()
 	if err != nil {
-		// Pokud cesta neexistuje nebo se nepodaří načíst, přeskočíme
 		return
 	}
 
@@ -51,7 +55,6 @@ func showStorage(path, label string) {
 	freeMB := free / 1024
 	percentUsed := used * 100 / total
 
-	// oříznout procenta na 0–100
 	if percentUsed > 100 {
 		percentUsed = 100
 	} else if percentUsed < 0 {
@@ -83,17 +86,47 @@ func showStorage(path, label string) {
 		GREEN, freeMB, RESET)
 }
 
+// Function to detect connected ZyXEL USB devices dynamically
+func detectZyXELUSB() []Storage {
+	var usbStorages []Storage
+
+	// Try to list /e-data directories (typical for FFP ZyXEL USB mounts)
+	cmd := exec.Command("ls", "/e-data")
+	out, err := cmd.Output()
+	if err != nil {
+		return usbStorages
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		path := "/e-data/" + line
+		label := "USB: " + line
+		usbStorages = append(usbStorages, Storage{Path: path, Label: label})
+	}
+
+	return usbStorages
+}
+
 func main() {
 	storages := []Storage{
 		// Android / Redmi
-		{"/storage/emulated/0", "Interní úložiště"},
-		{"/storage/65D9-1787", "SD karta"},
+		{"/storage/emulated/0", "Internal Storage"},
+		{"/storage/65D9-1787", "SD Card"},
+		// Android / tablet
+		{"/storage/sdcard0", "Internal Storage"},
 		// ZyXEL server
 		{"/dev/md0", "HDD 1"},
 		{"/dev/md1", "HDD 2"},
 	}
 
-	fmt.Printf("%s=== Úložiště ===%s\n", CYAN, RESET)
+	// Append auto-detected ZyXEL USB devices
+	usbDevices := detectZyXELUSB()
+	storages = append(storages, usbDevices...)
+
+	fmt.Printf("%s=== Storage ===%s\n", CYAN, RESET)
 	for _, s := range storages {
 		showStorage(s.Path, s.Label)
 	}
