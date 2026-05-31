@@ -120,6 +120,8 @@ func main() {
 		// ZyXEL server
 		{"/dev/md0", "HDD 1"},
 		{"/dev/md1", "HDD 2"},
+		// Others
+		{"/dev/sda1", "Others"},
 	}
 
 	// Append auto-detected ZyXEL USB devices
