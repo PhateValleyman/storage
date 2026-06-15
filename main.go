@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -110,7 +111,87 @@ func detectZyXELUSB() []Storage {
 	return usbStorages
 }
 
+// getSize returns size in bytes for a file or directory (recursively)
+func getSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	if !info.IsDir() {
+		return info.Size(), nil
+	}
+	// For directories, use du -sb (fast and reliable)
+	cmd := exec.Command("du", "-sb", path)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 1 {
+		return 0, fmt.Errorf("du output parse error")
+	}
+	size, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
+// formatSize converts bytes to human-readable string (B, KB, MB, GB, TB)
+func formatSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	switch exp {
+	case 0:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(div))
+	case 1:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(div))
+	case 2:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(div))
+	default:
+		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(div))
+	}
+}
+
+// printHelp displays a colorful usage screen with examples
+func printHelp() {
+	fmt.Printf("%s=== Storage Utility ===%s\n", CYAN, RESET)
+	fmt.Printf("%sUsage:%s\n", ORANGE, RESET)
+	fmt.Printf("  %s./storage%s                   %sShow overview of all storages (disks, USB, etc.)%s\n", CYAN, RESET, GREEN, RESET)
+	fmt.Printf("  %s./storage <path>%s            %sShow size of a file or directory (recursive)%s\n", CYAN, RESET, GREEN, RESET)
+	fmt.Printf("  %s./storage -h | --help%s        %sShow this help screen%s\n", CYAN, RESET, GREEN, RESET)
+	fmt.Printf("\n%sExamples:%s\n", ORANGE, RESET)
+	fmt.Printf("  %s./storage /etc/passwd%s        %sShow size of the passwd file%s\n", CYAN, RESET, GREEN, RESET)
+	fmt.Printf("  %s./storage /e-data%s            %sShow total size of the /e-data directory%s\n", CYAN, RESET, GREEN, RESET)
+	fmt.Printf("  %s./storage /dev/md0%s           %sShow size of a device (if it is a filesystem)%s\n", CYAN, RESET, GREEN, RESET)
+	fmt.Printf("\n%sNote:%s Directory size is computed using %sdu -sb%s, may take a while.\n", ORANGE, RESET, CYAN, RESET)
+}
+
 func main() {
+	args := os.Args[1:]
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
+		printHelp()
+		return
+	}
+	if len(args) == 1 {
+		path := args[0]
+		size, err := getSize(path)
+		if err != nil {
+			fmt.Printf("%sError: %s%s\n", ORANGE, err, RESET)
+			return
+		}
+		fmt.Printf("%sSize of %s%s:%s %s\n", CYAN, GREEN, path, RESET, formatSize(size))
+		return
+	}
+
+	// Original storage display
 	storages := []Storage{
 		// Android / Redmi
 		{"/storage/emulated/0", "Internal Storage"},
