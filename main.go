@@ -1,55 +1,51 @@
 package main
+
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
+	"path/filepath"
+	"syscall"
 	"strings"
 )
+
 const (
 	ORANGE = "\033[38;5;208m"
-	GREEN = "\033[0;32m"
-	CYAN = "\033[0;36m"
-	RESET = "\033[0m"
+	GREEN  = "\033[0;32m"
+	CYAN   = "\033[0;36m"
+	RESET  = "\033[0m"
 )
+
 const (
-	VERSION = "1.1"
-	AUTHOR = "PhateValleyman"
-	EMAIL = "Jonas.Ned@outlook.com"
+	VERSION = "1.2"
+	AUTHOR  = "PhateValleyman"
+	EMAIL   = "Jonas.Ned@outlook.com"
 )
+
 type Storage struct {
-	Path string
+	Path  string
 	Label string
 }
+
 func showStorage(path, label string) {
-	cmd := exec.Command("df", path)
-	out, err := cmd.Output()
+	var stat syscall.Statfs_t
+	err := syscall.Statfs(path, &stat)
 	if err != nil {
 		return
 	}
-	lines := strings.Split(string(out), "\n")
-	if len(lines) < 2 {
-		return
-	}
-	fields := strings.Fields(lines[1])
-	if len(fields) < 4 {
-		return
-	}
-	total, _ := strconv.ParseInt(fields[1], 10, 64)
-	used, _ := strconv.ParseInt(fields[2], 10, 64)
-	free, _ := strconv.ParseInt(fields[3], 10, 64)
+
+	total := int64(stat.Blocks) * int64(stat.Bsize)
+	free := int64(stat.Bavail) * int64(stat.Bsize)
+	used := total - (int64(stat.Bfree) * int64(stat.Bsize))
+
 	if total <= 0 {
 		return
 	}
-	totalGB := total / 1024 / 1024
-	usedGB := used / 1024 / 1024
-	freeMB := free / 1024
-	percentUsed := used * 100 / total
+
+	percentUsed := (used * 100) / total
 	if percentUsed > 100 {
 		percentUsed = 100
-	} else if percentUsed < 0 {
-		percentUsed = 0
 	}
+
 	barWidth := 30
 	usedChars := int(int64(barWidth) * percentUsed / 100)
 	if usedChars < 1 && percentUsed > 0 {
@@ -59,60 +55,60 @@ func showStorage(path, label string) {
 		usedChars = barWidth
 	}
 	freeChars := barWidth - usedChars
-	if freeChars < 0 {
-		freeChars = 0
-	}
+
 	usedBar := strings.Repeat("#", usedChars)
 	freeBar := strings.Repeat("#", freeChars)
-	fmt.Printf("%s%s%s\n", CYAN, label, RESET)
+
+	fmt.Printf("%s%s%s (%s)\n", CYAN, label, RESET, path)
 	fmt.Printf("  %s%s%s%s%s  %s%d%% used%s\n",
 		ORANGE, usedBar, RESET, GREEN, freeBar, CYAN, percentUsed, RESET)
-	fmt.Printf("  Total: %s%d G%s | Used: %s%d G%s | Free: %s%d M%s\n\n",
-		CYAN, totalGB, RESET,
-		ORANGE, usedGB, RESET,
-		GREEN, freeMB, RESET)
+	fmt.Printf("  Total: %s%s%s | Used: %s%s%s | Free: %s%s%s\n\n",
+		CYAN, formatSize(total), RESET,
+		ORANGE, formatSize(used), RESET,
+		GREEN, formatSize(free), RESET)
 }
+
 func detectZyXELUSB() []Storage {
 	var usbStorages []Storage
-	cmd := exec.Command("ls", "/e-data")
-	out, err := cmd.Output()
+	entries, err := os.ReadDir("/e-data")
 	if err != nil {
 		return usbStorages
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			name := entry.Name()
+			path := "/e-data/" + name
+			label := "USB: " + name
+			usbStorages = append(usbStorages, Storage{Path: path, Label: label})
 		}
-		path := "/e-data/" + line
-		label := "USB: " + line
-		usbStorages = append(usbStorages, Storage{Path: path, Label: label})
 	}
 	return usbStorages
 }
+
 func getSize(path string) (int64, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return 0, err
 	}
+
 	if !info.IsDir() {
 		return info.Size(), nil
 	}
-	cmd := exec.Command("du", "-sb", path)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, err
-	}
-	fields := strings.Fields(string(out))
-	if len(fields) < 1 {
-		return 0, fmt.Errorf("du output parse error")
-	}
-	size, err := strconv.ParseInt(fields[0], 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return size, nil
+
+	var size int64
+	err = filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
 }
+
 func formatSize(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
@@ -123,17 +119,20 @@ func formatSize(bytes int64) string {
 		div *= unit
 		exp++
 	}
+	
+	val := float64(bytes) / float64(div)
 	switch exp {
 	case 0:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(div))
+		return fmt.Sprintf("%.1f KB", val)
 	case 1:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(div))
+		return fmt.Sprintf("%.1f MB", val)
 	case 2:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(div))
+		return fmt.Sprintf("%.1f GB", val)
 	default:
-		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(div))
+		return fmt.Sprintf("%.1f TB", val)
 	}
 }
+
 func printHelp() {
 	fmt.Printf("%s=== Storage Utility ===%s\n", CYAN, RESET)
 	fmt.Printf("%sUsage:%s\n", ORANGE, RESET)
@@ -145,13 +144,14 @@ func printHelp() {
 	fmt.Printf("\n%sExamples:%s\n", ORANGE, RESET)
 	fmt.Printf("  %s./storage /etc%s\n", CYAN, RESET)
 	fmt.Printf("  %s./storage /etc /var /home%s\n", CYAN, RESET)
-	fmt.Printf("\n%sNote:%s du -sb is used for directory sizes\n", ORANGE, RESET)
 }
+
 func printVersion() {
 	fmt.Printf("%sstorage v%s%s\n", CYAN, VERSION, RESET)
 	fmt.Printf("%sby %s%s\n", ORANGE, AUTHOR, RESET)
 	fmt.Printf("%s%s%s\n", GREEN, EMAIL, RESET)
 }
+
 func printCompletion() {
 	fmt.Printf(`# bash completion for storage
 _storage_completion() {
@@ -168,6 +168,7 @@ _storage_completion() {
 complete -F _storage_completion storage
 `)
 }
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
@@ -185,13 +186,14 @@ func main() {
 		for _, path := range args {
 			size, err := getSize(path)
 			if err != nil {
-				fmt.Printf("%sError for %s: %s%s\n", ORANGE, path, err, RESET)
+				fmt.Printf("%sError for %s: %v%s\n", ORANGE, path, err, RESET)
 				continue
 			}
 			fmt.Printf("%s%s: %s%s\n", CYAN, path, formatSize(size), RESET)
 		}
 		return
 	}
+
 	storages := []Storage{
 		{"/storage/emulated/0", "Internal Storage"},
 		{"/storage/65D9-1787", "SD Card"},
@@ -199,11 +201,24 @@ func main() {
 		{"/dev/md0", "HDD 1"},
 		{"/dev/md1", "HDD 2"},
 		{"/dev/sda1", "Others"},
+		{"/", "Root"},
 	}
+
 	usbDevices := detectZyXELUSB()
 	storages = append(storages, usbDevices...)
-	fmt.Printf("%s=== Storage ===%s\n", CYAN, RESET)
+
+	fmt.Printf("%s=== Storage Overview ===%s\n\n", CYAN, RESET)
+	
+	activeFound := false
 	for _, s := range storages {
-		showStorage(s.Path, s.Label)
+		// Check if path exists before trying to get stats
+		if _, err := os.Stat(s.Path); err == nil {
+			showStorage(s.Path, s.Label)
+			activeFound = true
+		}
+	}
+	
+	if !activeFound {
+		fmt.Printf("%sNo active storage paths found.%s\n", ORANGE, RESET)
 	}
 }
