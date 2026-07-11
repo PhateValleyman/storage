@@ -1,6 +1,5 @@
 # Makefile for Storage Monitor project
 # Supports building for ZyXEL NAS, Redmi (Android / Termux), and native Linux.
-# Includes colored help output, ./bin output folder, and automatic install logic.
 
 # Colors
 YELLOW := \033[1;33m
@@ -14,7 +13,9 @@ BINARY := storage
 BIN_DIR := ./bin
 
 # Go build flags
-BUILD_FLAGS := -trimpath -v -x
+# Using GOTOOLCHAIN to ensure compatibility with older ARMv5 if needed
+GOTOOLCHAIN := go1.19.3
+BUILD_FLAGS := -trimpath -ldflags="-s -w"
 
 # Default target
 .DEFAULT_GOAL := help
@@ -42,16 +43,15 @@ $(BIN_DIR):
 # Help target
 help:
 	@echo ""
-	@echo "$(CYAN)Storage Monitor Build System$(RESET)"
+	@echo "$(CYAN)Storage Monitor Build System v1.4$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Usage:$(RESET)"
 	@echo "  make [target]"
 	@echo ""
 	@echo "$(YELLOW)Targets:$(RESET)"
 	@echo "  $(GREEN)help$(RESET)       - Show this help message"
-	@echo "  $(GREEN)zyxel$(RESET)      - Build binary for ZyXEL NAS (ARMv5, uClibc)"
+	@echo "  $(GREEN)zyxel$(RESET)      - Build binary for ZyXEL NAS (ARMv5, statically linked)"
 	@echo "  $(GREEN)redmi$(RESET)      - Build binary for Redmi (Android/Termux ARM64)"
-	@echo "  $(GREEN)termux$(RESET)     - Build binary for Termux (Linux ARM64)"
 	@echo "  $(GREEN)native$(RESET)     - Build binary for native host system ($(Native_GOOS)/$(Native_GOARCH))"
 	@echo "  $(GREEN)install$(RESET)    - Auto-detect system and install appropriate binary"
 	@echo "  $(GREEN)clean$(RESET)      - Remove build artifacts"
@@ -60,7 +60,7 @@ help:
 # ZyXEL target
 zyxel: $(BIN_DIR)
 	@echo "$(CYAN)[*] Building for ZyXEL NAS (ARMv5 soft-float)$(RESET)"
-	GOOS=$(ZyXEL_GOOS) GOARCH=$(ZyXEL_GOARCH) GOARM=$(ZyXEL_GOARM) go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-zyxel main.go
+	GOTOOLCHAIN=$(GOTOOLCHAIN) CGO_ENABLED=0 GOOS=$(ZyXEL_GOOS) GOARCH=$(ZyXEL_GOARCH) GOARM=$(ZyXEL_GOARM) go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-zyxel main.go
 	@echo "$(GREEN)✔ Build complete: $(BIN_DIR)/$(BINARY)-zyxel$(RESET)"
 
 # Redmi target
@@ -68,12 +68,6 @@ redmi: $(BIN_DIR)
 	@echo "$(CYAN)[*] Building for Redmi (Android / ARM64)$(RESET)"
 	GOOS=$(Redmi_GOOS) GOARCH=$(Redmi_GOARCH) GOARM=$(Redmi_GOARM) go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-redmi main.go
 	@echo "$(GREEN)✔ Build complete: $(BIN_DIR)/$(BINARY)-redmi$(RESET)"
-
-# Termux target
-termux: $(BIN_DIR)
-	@echo "$(CYAN)[*] Building for Termux (Linux / ARM64)$(RESET)"
-	GOOS=$(Termux_GOOS) GOARCH=$(Termux_GOARCH) GOARM=$(Termux_GOARM) go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-termux main.go
-	@echo "$(GREEN)✔ Build complete: $(BIN_DIR)/$(BINARY)-termux$(RESET)"
 
 # Native build
 native: $(BIN_DIR)
@@ -92,7 +86,7 @@ install:
 		echo "$(GREEN)✔ Installed to /ffp/bin/$(BINARY)$(RESET)"; \
 	elif [ -d "/data/data/com.termux/files/usr" ]; then \
 		echo "$(CYAN)[+] Detected Termux/Android environment$(RESET)"; \
-		$(MAKE) termux >/dev/null; \
+		GOOS=linux GOARCH=arm64 go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-termux main.go; \
 		cp $(BIN_DIR)/$(BINARY)-termux /data/data/com.termux/files/usr/bin/$(BINARY); \
 		chmod +x /data/data/com.termux/files/usr/bin/$(BINARY); \
 		echo "$(GREEN)✔ Installed to /data/data/com.termux/files/usr/bin/$(BINARY)$(RESET)"; \
